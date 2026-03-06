@@ -4,6 +4,8 @@ source 'https://rubygems.org'
 
 gemspec
 
+gem 'nexus-rpc', path: '../../nexus/sdk-ruby'
+
 group :development do
   gem 'activemodel'
   gem 'activerecord'

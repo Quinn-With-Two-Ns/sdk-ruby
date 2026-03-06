@@ -25,7 +25,8 @@ module Temporalio
 
       # Start a Nexus operation and return a handle.
       #
-      # @param operation [Symbol, String] Operation name.
+      # @param operation [NexusRPC::Operation, Symbol, String] Operation, either as a +NexusRPC::Operation+ object (which
+      #   also provides type hints) or as an operation name string/symbol.
       # @param arg [Object] Argument for the operation.
       # @param schedule_to_close_timeout [Float, nil] Total timeout for the operation in seconds.
       # @param schedule_to_start_timeout [Float, nil] Timeout in seconds for the operation to start executing. If the
@@ -35,8 +36,10 @@ module Temporalio
       # @param cancellation_type [NexusOperationCancellationType] How the operation will react to cancellation.
       # @param summary [String, nil] Optional summary for the operation (appears in UI/CLI).
       # @param cancellation [Cancellation] Cancellation for the operation.
-      # @param arg_hint [Object, nil] Converter hint for the argument.
-      # @param result_hint [Object, nil] Converter hint for the result.
+      # @param arg_hint [Object, nil] Converter hint for the argument. If unset and a +NexusRPC::Operation+ is provided,
+      #   its +input_type+ is used.
+      # @param result_hint [Object, nil] Converter hint for the result. If unset and a +NexusRPC::Operation+ is provided,
+      #   its +output_type+ is used.
       # @return [NexusOperationHandle] Handle to the started operation.
       def start_operation(
         operation,
@@ -57,7 +60,8 @@ module Temporalio
       #
       # This is a convenience method that calls {#start_operation} and immediately waits for the result.
       #
-      # @param operation [Symbol, String] Operation name.
+      # @param operation [NexusRPC::Operation, Symbol, String] Operation, either as a +NexusRPC::Operation+ object (which
+      #   also provides type hints) or as an operation name string/symbol.
       # @param arg [Object] Argument for the operation.
       # @param schedule_to_close_timeout [Float, nil] Total timeout for the operation in seconds.
       # @param schedule_to_start_timeout [Float, nil] Timeout in seconds for the operation to start executing. If the
@@ -67,8 +71,10 @@ module Temporalio
       # @param cancellation_type [NexusOperationCancellationType] How the operation will react to cancellation.
       # @param summary [String, nil] Optional summary for the operation (appears in UI/CLI).
       # @param cancellation [Cancellation] Cancellation for the operation.
-      # @param arg_hint [Object, nil] Converter hint for the argument.
-      # @param result_hint [Object, nil] Converter hint for the result.
+      # @param arg_hint [Object, nil] Converter hint for the argument. If unset and a +NexusRPC::Operation+ is provided,
+      #   its +input_type+ is used.
+      # @param result_hint [Object, nil] Converter hint for the result. If unset and a +NexusRPC::Operation+ is provided,
+      #   its +output_type+ is used.
       # @return [Object] Result of the operation.
       # @raise [Error::NexusOperationError] Operation failed.
       def execute_operation(

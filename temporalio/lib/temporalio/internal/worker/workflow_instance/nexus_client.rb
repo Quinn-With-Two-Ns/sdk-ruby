@@ -20,11 +20,20 @@ module Temporalio
           def start_operation(operation, arg, schedule_to_close_timeout: nil, schedule_to_start_timeout: nil,
                               start_to_close_timeout: nil, cancellation_type: nil, summary: nil,
                               cancellation: Workflow.cancellation, arg_hint: nil, result_hint: nil)
+            operation_name, defn_arg_hint, defn_result_hint =
+              case operation
+              when NexusRPC::Operation
+                [operation.name, operation.input_type, operation.output_type]
+              when Symbol, String
+                [operation.to_s, nil, nil]
+              else
+                raise ArgumentError, 'Operation must be a NexusRPC::Operation, or a symbol/string'
+              end
             @outbound.start_nexus_operation(
               Temporalio::Worker::Interceptor::Workflow::StartNexusOperationInput.new(
                 endpoint: @endpoint,
                 service: @service,
-                operation: operation.to_s,
+                operation: operation_name,
                 arg:,
                 schedule_to_close_timeout:,
                 schedule_to_start_timeout:,
@@ -32,8 +41,8 @@ module Temporalio
                 cancellation_type:,
                 summary:,
                 cancellation:,
-                arg_hint:,
-                result_hint:,
+                arg_hint: arg_hint || defn_arg_hint,
+                result_hint: result_hint || defn_result_hint,
                 headers: {}
               )
             )

@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require 'nexus_rpc'
 require 'opentelemetry/sdk'
 require 'temporalio/client'
 require 'temporalio/contrib/open_telemetry'
@@ -483,6 +484,109 @@ class WorkerWorkflowNexusTest < Test
       assert_instance_of Temporalio::Error::TimeoutError, err.cause.cause
       assert_equal Temporalio::Error::TimeoutError::TimeoutType::START_TO_CLOSE, err.cause.cause.type
     end
+  end
+
+  # NexusRPC::Service definition for typed client tests
+  class TypedTestNexusService
+    include NexusRPC::Service
+    service_name 'test-service'
+
+    Echo = operation('echo', input: String, output: String)
+    WorkflowOperation = operation('workflow-operation', input: Hash, output: Hash)
+  end
+
+  # Test typed service + typed operation
+  class NexusTypedServiceAndOperationWorkflow < Temporalio::Workflow::Definition
+    def execute(endpoint)
+      client = Temporalio::Workflow.create_nexus_client(endpoint:, service: TypedTestNexusService)
+      client.execute_operation(TypedTestNexusService::Echo, 'success')
+    end
+  end
+
+  def test_nexus_typed_service_and_operation
+    env.with_kitchen_sink_worker(nexus: true) do |task_queue|
+      endpoint = "nexus-endpoint-#{task_queue}"
+      result = execute_workflow(NexusTypedServiceAndOperationWorkflow, endpoint)
+      assert_equal 'success', result
+    end
+  end
+
+  # Test typed service with string operation (mixed usage)
+  class NexusTypedServiceStringOperationWorkflow < Temporalio::Workflow::Definition
+    def execute(endpoint)
+      client = Temporalio::Workflow.create_nexus_client(endpoint:, service: TypedTestNexusService)
+      client.execute_operation('echo', 'success')
+    end
+  end
+
+  def test_nexus_typed_service_string_operation
+    env.with_kitchen_sink_worker(nexus: true) do |task_queue|
+      endpoint = "nexus-endpoint-#{task_queue}"
+      result = execute_workflow(NexusTypedServiceStringOperationWorkflow, endpoint)
+      assert_equal 'success', result
+    end
+  end
+
+  # Test string service with typed operation (mixed usage)
+  class NexusStringServiceTypedOperationWorkflow < Temporalio::Workflow::Definition
+    def execute(endpoint)
+      client = Temporalio::Workflow.create_nexus_client(endpoint:, service: 'test-service')
+      client.execute_operation(TypedTestNexusService::Echo, 'success')
+    end
+  end
+
+  def test_nexus_string_service_typed_operation
+    env.with_kitchen_sink_worker(nexus: true) do |task_queue|
+      endpoint = "nexus-endpoint-#{task_queue}"
+      result = execute_workflow(NexusStringServiceTypedOperationWorkflow, endpoint)
+      assert_equal 'success', result
+    end
+  end
+
+  # Test typed operation with start_operation
+  class NexusTypedStartOperationWorkflow < Temporalio::Workflow::Definition
+    def execute(endpoint)
+      client = Temporalio::Workflow.create_nexus_client(endpoint:, service: TypedTestNexusService)
+      handle = client.start_operation(TypedTestNexusService::Echo, 'success')
+      handle.result
+    end
+  end
+
+  def test_nexus_typed_start_operation
+    env.with_kitchen_sink_worker(nexus: true) do |task_queue|
+      endpoint = "nexus-endpoint-#{task_queue}"
+      result = execute_workflow(NexusTypedStartOperationWorkflow, endpoint)
+      assert_equal 'success', result
+    end
+  end
+
+  # Test error: invalid service class (not including NexusRPC::Service)
+  class NexusInvalidServiceWorkflow < Temporalio::Workflow::Definition
+    def execute(endpoint)
+      Temporalio::Workflow.create_nexus_client(endpoint:, service: String)
+    rescue ArgumentError => e
+      { 'error' => e.message }
+    end
+  end
+
+  def test_nexus_invalid_service_class_raises_argument_error
+    result = execute_workflow(NexusInvalidServiceWorkflow, 'dummy-endpoint')
+    assert_includes result['error'], 'NexusRPC::Service'
+  end
+
+  # Test error: invalid operation type
+  class NexusInvalidOperationWorkflow < Temporalio::Workflow::Definition
+    def execute(endpoint)
+      client = Temporalio::Workflow.create_nexus_client(endpoint:, service: 'test-service')
+      client.execute_operation(123, 'input')
+    rescue ArgumentError => e
+      { 'error' => e.message }
+    end
+  end
+
+  def test_nexus_invalid_operation_type_raises_argument_error
+    result = execute_workflow(NexusInvalidOperationWorkflow, 'dummy-endpoint')
+    assert_includes result['error'], 'NexusRPC::Operation'
   end
 
   class NexusOperationTracingWorkflow < Temporalio::Workflow::Definition

@@ -48,7 +48,8 @@ module Temporalio
     # WARNING: Nexus support is experimental.
     #
     # @param endpoint [Symbol, String] Endpoint name.
-    # @param service [Symbol, String] Service name.
+    # @param service [Class, Symbol, String] Service name, or a class that includes +NexusRPC::Service+ to extract the
+    #   service name from.
     # @return [NexusClient] Client for executing Nexus operations.
     def self.create_nexus_client(endpoint:, service:)
       _current.create_nexus_client(endpoint:, service:)

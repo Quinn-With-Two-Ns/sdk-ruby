@@ -27,4 +27,5 @@ Gem::Specification.new do |spec|
 
   spec.add_dependency 'google-protobuf', '>= 3.25.0'
   spec.add_dependency 'logger'
+  spec.add_dependency 'nexus-rpc', '>= 0.1.0'
 end

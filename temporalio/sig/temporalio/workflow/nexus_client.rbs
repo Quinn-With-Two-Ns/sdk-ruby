@@ -5,7 +5,7 @@ module Temporalio
       def service: -> String
 
       def start_operation: (
-        Symbol | String operation,
+        NexusRPC::Operation | Symbol | String operation,
         Object? arg,
         ?schedule_to_close_timeout: duration?,
         ?schedule_to_start_timeout: duration?,
@@ -18,7 +18,7 @@ module Temporalio
       ) -> NexusOperationHandle
 
       def execute_operation: (
-        Symbol | String operation,
+        NexusRPC::Operation | Symbol | String operation,
         Object? arg,
         ?schedule_to_close_timeout: duration?,
         ?schedule_to_start_timeout: duration?,
