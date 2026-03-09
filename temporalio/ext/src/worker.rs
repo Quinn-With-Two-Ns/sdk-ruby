@@ -66,6 +66,10 @@ pub fn init(ruby: &Ruby) -> Result<(), Error> {
         method!(Worker::async_complete_activity_task, 2),
     )?;
     class.define_method(
+        "async_complete_nexus_task",
+        method!(Worker::async_complete_nexus_task, 2),
+    )?;
+    class.define_method(
         "record_activity_heartbeat",
         method!(Worker::record_activity_heartbeat, 1),
     )?;
@@ -93,12 +97,14 @@ pub struct Worker {
     runtime_handle: RuntimeHandle,
     activity: bool,
     workflow: bool,
+    nexus: bool,
 }
 
 #[derive(Copy, Clone)]
 enum WorkerType {
     Activity,
     Workflow,
+    Nexus,
 }
 
 struct PollResult {
@@ -117,6 +123,7 @@ impl Worker {
         let activity =
             config.task_types.enable_local_activities || config.task_types.enable_remote_activities;
         let workflow = config.task_types.enable_workflows;
+        let nexus = config.task_types.enable_nexus;
 
         let worker = temporalio_sdk_core::init_worker(
             &client.runtime_handle.core,
@@ -130,6 +137,7 @@ impl Worker {
             runtime_handle: client.runtime_handle.clone(),
             activity,
             workflow,
+            nexus,
         })
     }
 
@@ -153,6 +161,13 @@ impl Worker {
                     }
                     WorkerType::Workflow => {
                         match temporalio_common::Worker::poll_workflow_activation(&*worker).await {
+                            Ok(res) => Ok(Some(res.encode_to_vec())),
+                            Err(PollError::ShutDown) => Ok(None),
+                            Err(err) => Err(format!("Poll error: {err}")),
+                        }
+                    }
+                    WorkerType::Nexus => {
+                        match temporalio_common::Worker::poll_nexus_task(&*worker).await {
                             Ok(res) => Ok(Some(res.encode_to_vec())),
                             Err(PollError::ShutDown) => Ok(None),
                             Err(err) => Err(format!("Poll error: {err}")),
@@ -213,6 +228,9 @@ impl Worker {
                         WorkerType::Workflow,
                     ));
                 }
+                if worker_ref.nexus {
+                    streams.push(Self::stream_poll(worker.clone(), index, WorkerType::Nexus));
+                }
                 streams
             })
             .collect::<Vec<_>>();
@@ -238,6 +256,7 @@ impl Worker {
                         let worker_type = match poll_result.worker_type {
                             WorkerType::Activity => id!("activity"),
                             WorkerType::Workflow => id!("workflow"),
+                            WorkerType::Nexus => id!("nexus"),
                         };
                         // Call block
                         let result: Value = match poll_result.result {
@@ -357,6 +376,26 @@ impl Worker {
         Ok(())
     }
 
+    pub fn async_complete_nexus_task(&self, proto: RString, queue: Value) -> Result<(), Error> {
+        let callback = AsyncCallback::from_queue(queue);
+        let worker = self.core.borrow().as_ref().unwrap().clone();
+        let completion =
+            temporalio_common::protos::coresdk::nexus::NexusTaskCompletion::decode(unsafe {
+                proto.as_slice()
+            })
+            .map_err(|err| error!("Invalid proto: {}", err))?;
+        self.runtime_handle.spawn(
+            async move {
+                temporalio_common::Worker::complete_nexus_task(&*worker, completion).await
+            },
+            move |ruby, result| match result {
+                Ok(()) => callback.push(&ruby, (ruby.qnil(),)),
+                Err(err) => callback.push(&ruby, (new_error!("Completion failure: {}", err),)),
+            },
+        );
+        Ok(())
+    }
+
     pub fn record_activity_heartbeat(&self, proto: RString) -> Result<(), Error> {
         enter_sync!(self.runtime_handle);
         let heartbeat = ActivityHeartbeat::decode(unsafe { proto.as_slice() })
@@ -447,6 +486,7 @@ impl WorkflowReplayer {
                 runtime_handle: runtime.handle.clone(),
                 activity: false,
                 workflow: true,
+                nexus: false,
             },
         ))
     }
@@ -604,12 +644,25 @@ fn build_tuner(options: Struct, runtime_handle: &RuntimeHandle) -> Result<TunerH
         resource_slot_options,
         runtime_handle,
     )?;
+    let (nexus_slot_options, resource_slot_options) =
+        if let Some(nexus_opts) = options.child(id!("nexus_slot_supplier"))? {
+            let (opts, res) =
+                build_tuner_slot_options(nexus_opts, resource_slot_options, runtime_handle)?;
+            (Some(opts), res)
+        } else {
+            (None, resource_slot_options)
+        };
 
-    TunerHolderOptions::builder()
+    let mut builder = TunerHolderOptions::builder();
+    builder
         .maybe_resource_based_options(resource_slot_options)
         .workflow_slot_options(workflow_slot_options)
         .activity_slot_options(activity_slot_options)
-        .local_activity_slot_options(local_activity_slot_options)
+        .local_activity_slot_options(local_activity_slot_options);
+    if let Some(nexus_opts) = nexus_slot_options {
+        builder.nexus_slot_options(nexus_opts);
+    }
+    builder
         .build()
         .map_err(|err| error!("Failed building tuner options: {}", err))?
         .build_tuner_holder()

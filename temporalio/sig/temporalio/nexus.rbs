@@ -1,0 +1,17 @@
+module Temporalio
+  module Nexus
+    Info: untyped
+
+    def self.client: -> Client
+
+    def self.info: -> untyped
+
+    def self.in_operation?: -> bool
+
+    def self.metric_meter: -> untyped
+
+    def self.worker_shutdown?: -> bool
+
+    def self.worker_shutdown_cancellation: -> Cancellation
+  end
+end

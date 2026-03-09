@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'json'
+require 'nexus_rpc'
 require 'temporalio/api'
 require 'temporalio/error'
 require 'temporalio/internal/proto_utils'
@@ -8,6 +10,7 @@ module Temporalio
   module Converters
     # Base class for converting Ruby errors to/from Temporal failures.
     class FailureConverter
+      TEMPORAL_FAILURE_PROTO_TYPE = 'temporal.api.failure.v1.Failure'
       # @return [FailureConverter] Default failure converter.
       def self.default
         @default ||= FailureConverter.new
@@ -86,16 +89,22 @@ module Temporalio
           )
         when Error::NexusOperationError
           failure.nexus_operation_execution_failure_info = Api::Failure::V1::NexusOperationFailureInfo.new(
+            scheduled_event_id: error.scheduled_event_id,
             endpoint: error.endpoint,
             service: error.service,
             operation: error.operation,
             operation_token: error.operation_token || ''
           )
-        when Error::NexusHandlerError
-          failure.nexus_handler_failure_info = Api::Failure::V1::NexusHandlerFailureInfo.new(
-            type: error.error_type.to_s,
-            retry_behavior: error.retry_behavior
-          )
+        when NexusRPC::HandlerError
+          if error.failure
+            # Round-trip: reconstitute the full temporal failure from the stored NexusRPC::Failure
+            failure = _nexus_failure_to_temporal_failure(error.failure, error.retryable)
+          else
+            failure.nexus_handler_failure_info = Api::Failure::V1::NexusHandlerFailureInfo.new(
+              type: error.type.to_s.upcase,
+              retry_behavior: _retryable_override_to_retry_behavior(error.retryable_override)
+            )
+          end
         else
           failure.application_failure_info = Api::Failure::V1::ApplicationFailureInfo.new(
             type: error.class.name.to_s.split('::').last
@@ -203,22 +212,35 @@ module Temporalio
                     )
                   )
                 elsif failure.nexus_operation_execution_failure_info
-                  token = failure.nexus_operation_execution_failure_info.operation_token
+                  info = failure.nexus_operation_execution_failure_info
+                  token = info.operation_token
                   Error::NexusOperationError.new(
                     Internal::ProtoUtils.string_or(failure.message, 'Nexus operation error'),
-                    endpoint: failure.nexus_operation_execution_failure_info.endpoint,
-                    service: failure.nexus_operation_execution_failure_info.service,
-                    operation: failure.nexus_operation_execution_failure_info.operation,
-                    operation_token: token.empty? ? nil : token
+                    endpoint: info.endpoint,
+                    service: info.service,
+                    operation: info.operation,
+                    operation_token: token.empty? ? nil : token,
+                    scheduled_event_id: info.scheduled_event_id,
+                    original_failure: failure
                   )
                 elsif failure.nexus_handler_failure_info
-                  Error::NexusHandlerError.new(
+                  info = failure.nexus_handler_failure_info
+                  type_sym = info.type.downcase.to_sym
+                  unless NexusRPC::HandlerErrorType::ALL.include?(type_sym)
+                    type_sym = NexusRPC::HandlerErrorType::INTERNAL
+                  end
+
+                  retry_behavior_int = Internal::ProtoUtils.enum_to_int(
+                    Api::Enums::V1::NexusHandlerErrorRetryBehavior,
+                    info.retry_behavior
+                  )
+                  retryable = _retry_behavior_to_retryable_override(retry_behavior_int)
+
+                  NexusRPC::HandlerError.new(
                     Internal::ProtoUtils.string_or(failure.message, 'Nexus handler error'),
-                    error_type: failure.nexus_handler_failure_info.type,
-                    retry_behavior: Internal::ProtoUtils.enum_to_int(
-                      Api::Enums::V1::NexusHandlerErrorRetryBehavior,
-                      failure.nexus_handler_failure_info.retry_behavior
-                    )
+                    type: type_sym,
+                    retryable: retryable,
+                    failure: _temporal_failure_to_nexus_failure(failure)
                   )
                 else
                   Error::Failure.new(Internal::ProtoUtils.string_or(failure.message, 'Failure error'))
@@ -229,6 +251,70 @@ module Temporalio
           backtrace: failure.stack_trace.split("\n"),
           cause: failure.cause ? from_failure(failure.cause, converter) : nil
         )
+      end
+
+      private
+
+      # Convert a Temporal failure proto to a NexusRPC::Failure for storage on NexusRPC::HandlerError.
+      # This enables round-tripping: the full temporal failure can be reconstituted later.
+      def _temporal_failure_to_nexus_failure(failure)
+        # Deep clone to avoid mutating the input
+        f = Api::Failure::V1::Failure.decode(Api::Failure::V1::Failure.encode(failure))
+        message = f.message
+        stack_trace = f.stack_trace
+        f.message = ''
+        f.stack_trace = ''
+
+        json_str = Api::Failure::V1::Failure.encode_json(f, emit_defaults: false)
+        details_hash = JSON.parse(json_str)
+        details_hash.delete('message')
+        details_hash.delete('stackTrace')
+        details_hash.delete_if { |_, v| v.nil? || (v.respond_to?(:empty?) && v.empty?) }
+
+        NexusRPC::Failure.new(
+          message: message,
+          stack_trace: stack_trace.empty? ? nil : stack_trace,
+          metadata: { 'type' => TEMPORAL_FAILURE_PROTO_TYPE },
+          details: details_hash.empty? ? nil : details_hash
+        )
+      end
+
+      # Reconstitute a Temporal failure proto from a NexusRPC::Failure.
+      def _nexus_failure_to_temporal_failure(nexus_failure, retryable)
+        failure = Api::Failure::V1::Failure.new
+
+        if nexus_failure.metadata&.dig('type') == TEMPORAL_FAILURE_PROTO_TYPE && nexus_failure.details
+          failure = Api::Failure::V1::Failure.decode_json(JSON.generate(nexus_failure.details))
+        else
+          failure.application_failure_info = Api::Failure::V1::ApplicationFailureInfo.new(
+            type: 'NexusFailure',
+            non_retryable: !retryable
+          )
+        end
+
+        failure.message = nexus_failure.message || ''
+        failure.stack_trace = nexus_failure.stack_trace || ''
+        failure
+      end
+
+      def _retryable_override_to_retry_behavior(retryable_override)
+        if retryable_override == true
+          Api::Enums::V1::NexusHandlerErrorRetryBehavior::NEXUS_HANDLER_ERROR_RETRY_BEHAVIOR_RETRYABLE
+        elsif retryable_override == false
+          Api::Enums::V1::NexusHandlerErrorRetryBehavior::NEXUS_HANDLER_ERROR_RETRY_BEHAVIOR_NON_RETRYABLE
+        else
+          Api::Enums::V1::NexusHandlerErrorRetryBehavior::NEXUS_HANDLER_ERROR_RETRY_BEHAVIOR_UNSPECIFIED
+        end
+      end
+
+      def _retry_behavior_to_retryable_override(retry_behavior_int)
+        if retry_behavior_int ==
+           Api::Enums::V1::NexusHandlerErrorRetryBehavior::NEXUS_HANDLER_ERROR_RETRY_BEHAVIOR_RETRYABLE
+          true
+        elsif retry_behavior_int ==
+              Api::Enums::V1::NexusHandlerErrorRetryBehavior::NEXUS_HANDLER_ERROR_RETRY_BEHAVIOR_NON_RETRYABLE
+          false
+        end
       end
     end
   end

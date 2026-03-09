@@ -330,6 +330,7 @@ class WorkerWorkflowNexusTest < Test
           'service' => e.service,
           'operation' => e.operation,
           'has_token' => !e.operation_token.nil?,
+          'scheduled_event_id' => e.scheduled_event_id,
           'message' => e.message
         }
       end
@@ -346,6 +347,7 @@ class WorkerWorkflowNexusTest < Test
       assert_equal 'test-service', result['service']
       assert_equal 'echo', result['operation']
       assert_equal false, result['has_token'] # Sync operation that fails immediately has no token
+      assert result['scheduled_event_id'].positive?, 'Expected positive scheduled_event_id' # steep:ignore
       assert_includes result['message'], 'nexus operation completed unsuccessfully'
     end
   end
@@ -376,13 +378,13 @@ class WorkerWorkflowNexusTest < Test
         client.execute_operation('echo', 'fail')
       rescue Temporalio::Error::NexusOperationError => e
         # The handler error should be wrapped in the cause
-        raise unless e.cause.is_a?(Temporalio::Error::NexusHandlerError)
+        raise unless e.cause.is_a?(NexusRPC::HandlerError)
 
         # steep:ignore:start
         {
           handler_error: true,
-          error_type: e.cause.error_type,
-          retry_behavior: e.cause.retry_behavior,
+          error_type: e.cause.type.to_s.upcase,
+          retryable_override: e.cause.retryable_override,
           message: e.cause.message
         }
         # steep:ignore:end
@@ -398,7 +400,7 @@ class WorkerWorkflowNexusTest < Test
 
       assert result['handler_error']
       assert_equal 'BAD_REQUEST', result['error_type']
-      assert_equal Temporalio::Error::NexusHandlerError::RetryBehavior::UNSPECIFIED, result['retry_behavior']
+      assert_nil result['retryable_override']
       assert_includes result['message'], 'operation failed'
     end
   end
@@ -487,12 +489,11 @@ class WorkerWorkflowNexusTest < Test
   end
 
   # NexusRPC::Service definition for typed client tests
-  class TypedTestNexusService
-    include NexusRPC::Service
+  class TypedTestNexusService < NexusRPC::Service
     service_name 'test-service'
 
-    Echo = operation('echo', input: String, output: String)
-    WorkflowOperation = operation('workflow-operation', input: Hash, output: Hash)
+    operation :Echo, input: String, output: String
+    operation :WorkflowOperation, name: 'workflow-operation', input: Hash, output: Hash
   end
 
   # Test typed service + typed operation
@@ -560,7 +561,7 @@ class WorkerWorkflowNexusTest < Test
     end
   end
 
-  # Test error: invalid service class (not including NexusRPC::Service)
+  # Test error: invalid service class (not inheriting from NexusRPC::Service)
   class NexusInvalidServiceWorkflow < Temporalio::Workflow::Definition
     def execute(endpoint)
       Temporalio::Workflow.create_nexus_client(endpoint:, service: String)

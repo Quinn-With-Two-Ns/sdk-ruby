@@ -402,6 +402,72 @@ module Temporalio
           end
         end
       end
+      # Mixin for intercepting Nexus operation handler work. Classes that `include` may implement their own
+      # {intercept_nexus_operation} that returns their own instance of {Inbound}.
+      #
+      # WARNING: Nexus support is experimental.
+      #
+      # @note Input classes herein may get new required fields added and therefore the constructors of the Input classes
+      #   may change in backwards incompatible ways. Users should not try to construct Input classes themselves.
+      module Nexus
+        # Method called when intercepting a Nexus operation. This is called when dispatching a Nexus task.
+        #
+        # @param next_interceptor [Inbound] Next interceptor in the chain that should be called. This is usually passed
+        #   to {Inbound} constructor.
+        # @return [Inbound] Interceptor to be called for Nexus operation calls.
+        def intercept_nexus_operation(next_interceptor)
+          next_interceptor
+        end
+
+        # Input for {Inbound.execute_operation_start}.
+        #
+        # WARNING: Nexus support is experimental.
+        ExecuteOperationStartInput = Data.define(
+          :ctx,
+          :input
+        )
+
+        # Input for {Inbound.execute_operation_cancel}.
+        #
+        # WARNING: Nexus support is experimental.
+        ExecuteOperationCancelInput = Data.define(
+          :ctx,
+          :token
+        )
+
+        # Inbound interceptor for intercepting inbound Nexus operation calls. This should be extended by users needing
+        # to intercept Nexus operations.
+        #
+        # WARNING: Nexus support is experimental.
+        class Inbound
+          # @return [Inbound] Next interceptor in the chain.
+          attr_reader :next_interceptor
+
+          # Initialize inbound with the next interceptor in the chain.
+          #
+          # @param next_interceptor [Inbound] Next interceptor in the chain.
+          def initialize(next_interceptor)
+            @next_interceptor = next_interceptor
+          end
+
+          # Start a Nexus operation and return result. Next interceptor in chain (i.e. `super`) will perform the
+          # execution.
+          #
+          # @param input [ExecuteOperationStartInput] Input information.
+          # @return [NexusRPC::HandlerStartOperationResult::Sync, NexusRPC::HandlerStartOperationResult::Async]
+          def execute_operation_start(input)
+            @next_interceptor.execute_operation_start(input)
+          end
+
+          # Cancel a Nexus operation. Next interceptor in chain (i.e. `super`) will perform the cancellation.
+          #
+          # @param input [ExecuteOperationCancelInput] Input information.
+          # @return [void]
+          def execute_operation_cancel(input)
+            @next_interceptor.execute_operation_cancel(input)
+          end
+        end
+      end
     end
   end
 end

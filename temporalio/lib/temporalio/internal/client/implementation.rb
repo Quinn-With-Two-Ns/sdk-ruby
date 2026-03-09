@@ -19,6 +19,7 @@ require 'temporalio/converters'
 require 'temporalio/error'
 require 'temporalio/error/failure'
 require 'temporalio/internal/proto_utils'
+require 'temporalio/internal/worker/nexus_operation_context'
 require 'temporalio/runtime'
 require 'temporalio/search_attributes'
 require 'temporalio/workflow/definition'
@@ -49,7 +50,6 @@ module Temporalio
 
         def start_workflow(input)
           req = Api::WorkflowService::V1::StartWorkflowExecutionRequest.new(
-            request_id: SecureRandom.uuid,
             namespace: @client.namespace,
             workflow_type: Api::Common::V1::WorkflowType.new(name: input.workflow),
             workflow_id: input.workflow_id,
@@ -72,7 +72,10 @@ module Temporalio
             ),
             header: ProtoUtils.headers_to_proto(input.headers, @client.data_converter),
             priority: input.priority._to_proto,
-            versioning_override: input.versioning_override&._to_proto
+            versioning_override: input.versioning_override&._to_proto,
+            completion_callbacks: _nexus_completion_callbacks,
+            links: _nexus_workflow_event_links,
+            request_id: _nexus_request_id || SecureRandom.uuid
           )
 
           # Send request
@@ -928,6 +931,41 @@ module Temporalio
             )
           end
           nil
+        end
+
+        private
+
+        def _nexus_completion_callbacks
+          ctx = Temporalio::Internal::Worker::NexusOperationContext.current_or_nil
+          return nil unless ctx&.callback_url && !ctx.callback_url.empty?
+
+          [
+            Api::Common::V1::Callback.new(
+              nexus: Api::Common::V1::Callback::Nexus.new(
+                url: ctx.callback_url,
+                header: ctx.callback_headers
+              )
+            )
+          ]
+        end
+
+        def _nexus_workflow_event_links
+          ctx = Temporalio::Internal::Worker::NexusOperationContext.current_or_nil
+          return nil unless ctx
+
+          require 'temporalio/nexus/link_conversion'
+          links = ctx.inbound_links.filter_map do |link|
+            workflow_event = Temporalio::Nexus::LinkConversion.nexus_link_to_workflow_event(link)
+            next unless workflow_event
+
+            Api::Common::V1::Link.new(workflow_event: workflow_event)
+          end
+          links.empty? ? nil : links
+        end
+
+        def _nexus_request_id
+          ctx = Temporalio::Internal::Worker::NexusOperationContext.current_or_nil
+          ctx&.request_id
         end
       end
     end

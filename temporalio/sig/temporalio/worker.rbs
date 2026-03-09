@@ -6,6 +6,7 @@ module Temporalio
       attr_reader task_queue: String
       attr_reader activities: Array[Activity::Definition | singleton(Activity::Definition) | Activity::Definition::Info]
       attr_reader workflows: Array[singleton(Workflow::Definition) | Workflow::Definition::Info]
+      attr_reader nexus_service_handlers: Array[NexusRPC::Service]
       attr_reader tuner: Tuner
       attr_reader activity_executors: Hash[Symbol, Worker::ActivityExecutor]
       attr_reader workflow_executor: Worker::WorkflowExecutor
@@ -39,6 +40,7 @@ module Temporalio
         task_queue: String,
         activities: Array[Activity::Definition | singleton(Activity::Definition) | Activity::Definition::Info],
         workflows: Array[singleton(Workflow::Definition) | Workflow::Definition::Info],
+        nexus_service_handlers: Array[NexusRPC::Service],
         tuner: Tuner,
         activity_executors: Hash[Symbol, Worker::ActivityExecutor],
         workflow_executor: Worker::WorkflowExecutor,
@@ -102,6 +104,7 @@ module Temporalio
       task_queue: String,
       ?activities: Array[Activity::Definition | singleton(Activity::Definition) | Activity::Definition::Info],
       ?workflows: Array[singleton(Workflow::Definition) | Workflow::Definition::Info],
+      ?nexus_service_handlers: Array[NexusRPC::Service],
       ?tuner: Tuner,
       ?activity_executors: Hash[Symbol, Worker::ActivityExecutor],
       ?workflow_executor: Worker::WorkflowExecutor,

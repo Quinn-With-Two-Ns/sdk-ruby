@@ -9,6 +9,7 @@ require 'temporalio/internal/bridge/worker'
 require 'temporalio/internal/proto_utils'
 require 'temporalio/internal/worker/activity_worker'
 require 'temporalio/internal/worker/multi_runner'
+require 'temporalio/internal/worker/nexus_worker'
 require 'temporalio/internal/worker/workflow_instance'
 require 'temporalio/internal/worker/workflow_worker'
 require 'temporalio/worker/activity_executor'
@@ -33,6 +34,7 @@ module Temporalio
       :task_queue,
       :activities,
       :workflows,
+      :nexus_service_handlers,
       :tuner,
       :activity_executors,
       :workflow_executor,
@@ -437,6 +439,7 @@ module Temporalio
       task_queue:,
       activities: [],
       workflows: [],
+      nexus_service_handlers: [],
       tuner: Tuner.create_fixed,
       activity_executors: ActivityExecutor.defaults,
       workflow_executor: WorkflowExecutor::ThreadPool.default,
@@ -472,6 +475,7 @@ module Temporalio
         task_queue:,
         activities:,
         workflows:,
+        nexus_service_handlers:,
         tuner:,
         activity_executors:,
         workflow_executor:,
@@ -510,8 +514,8 @@ module Temporalio
 
     # @!visibility private
     def _initialize_from_options
-      if @options.activities.empty? && @options.workflows.empty?
-        raise ArgumentError, 'Must have at least one activity or workflow'
+      if @options.activities.empty? && @options.workflows.empty? && @options.nexus_service_handlers.empty?
+        raise ArgumentError, 'Must have at least one activity, workflow, or Nexus service handler'
       end
 
       should_enforce_versioning_behavior =
@@ -543,7 +547,7 @@ module Temporalio
           enable_workflows: !@options.workflows.empty?,
           enable_local_activities: !@options.workflows.empty? && !@options.activities.empty?,
           enable_remote_activities: !@options.activities.empty? && !@options.no_remote_activities,
-          enable_nexus: false,
+          enable_nexus: !@options.nexus_service_handlers.empty?,
           sticky_queue_schedule_to_start_timeout: @options.sticky_queue_schedule_to_start_timeout,
           max_heartbeat_throttle_interval: @options.max_heartbeat_throttle_interval,
           default_heartbeat_throttle_interval: @options.default_heartbeat_throttle_interval,
@@ -592,6 +596,10 @@ module Temporalio
           debug_mode: @options.debug_mode,
           assert_valid_local_activity: ->(activity) { _assert_valid_local_activity(activity) }
         )
+      end
+      unless @options.nexus_service_handlers.empty?
+        @nexus_worker = Internal::Worker::NexusWorker.new(worker: self,
+                                                          bridge_worker: @bridge_worker)
       end
 
       # Validate worker
@@ -666,6 +674,7 @@ module Temporalio
     # @!visibility private
     def _wait_all_complete
       @activity_worker&.wait_all_complete
+      @nexus_worker&.wait_all_complete
     end
 
     # @!visibility private
@@ -689,6 +698,8 @@ module Temporalio
           activation: Internal::Bridge::Api::WorkflowActivation::WorkflowActivation.decode(bytes),
           decoded: false
         )
+      when :nexus
+        @nexus_worker.handle_task(bytes)
       else
         raise "Unrecognized worker type #{worker_type}"
       end

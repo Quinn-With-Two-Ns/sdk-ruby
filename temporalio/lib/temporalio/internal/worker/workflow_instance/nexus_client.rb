@@ -18,8 +18,9 @@ module Temporalio
           end
 
           def start_operation(operation, arg, schedule_to_close_timeout: nil, schedule_to_start_timeout: nil,
-                              start_to_close_timeout: nil, cancellation_type: nil, summary: nil,
-                              cancellation: Workflow.cancellation, arg_hint: nil, result_hint: nil)
+                              start_to_close_timeout: nil, cancellation_type: nil, headers: nil,
+                              summary: nil, cancellation: Workflow.cancellation, arg_hint: nil,
+                              result_hint: nil)
             operation_name, defn_arg_hint, defn_result_hint =
               case operation
               when NexusRPC::Operation
@@ -43,7 +44,7 @@ module Temporalio
                 cancellation:,
                 arg_hint: arg_hint || defn_arg_hint,
                 result_hint: result_hint || defn_result_hint,
-                headers: {}
+                headers: headers || {}
               )
             )
           end

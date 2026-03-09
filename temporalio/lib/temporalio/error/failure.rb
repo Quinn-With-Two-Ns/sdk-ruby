@@ -246,6 +246,10 @@ module Temporalio
       attr_reader :operation
       # @return [String, nil] Operation token for async operations.
       attr_reader :operation_token
+      # @return [Integer] The NexusOperationScheduled event ID for the operation that failed.
+      attr_reader :scheduled_event_id
+      # @return [Api::Failure::V1::Failure, nil] Original failure proto for wire round-tripping.
+      attr_reader :original_failure
 
       # @!visibility private
       def initialize(
@@ -253,13 +257,17 @@ module Temporalio
         endpoint:,
         service:,
         operation:,
-        operation_token:
+        operation_token:,
+        scheduled_event_id: 0,
+        original_failure: nil
       )
         super(message)
         @endpoint = endpoint
         @service = service
         @operation = operation
         @operation_token = operation_token
+        @scheduled_event_id = scheduled_event_id
+        @original_failure = original_failure
       end
     end
 
@@ -270,18 +278,29 @@ module Temporalio
       # @return [Symbol] Error type from the handler.
       attr_reader :error_type
 
+      # @return [String] Raw error type string from the wire. Useful when the type is unknown and
+      #   cannot be mapped to a known symbol.
+      attr_reader :raw_error_type
+
       # @return [RetryBehavior] Retry behavior for the error.
       attr_reader :retry_behavior
+
+      # @return [Api::Failure::V1::Failure, nil] Original failure proto for wire round-tripping.
+      attr_reader :original_failure
 
       # @!visibility private
       def initialize(
         message,
         error_type:,
-        retry_behavior:
+        retry_behavior:,
+        raw_error_type: nil,
+        original_failure: nil
       )
         super(message)
         @error_type = error_type.to_sym
+        @raw_error_type = raw_error_type || error_type.to_s
         @retry_behavior = retry_behavior
+        @original_failure = original_failure
       end
 
       # Nexus handler error retry behavior.

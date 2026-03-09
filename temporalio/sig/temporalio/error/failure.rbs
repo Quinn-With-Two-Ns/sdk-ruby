@@ -130,24 +130,32 @@ module Temporalio
       attr_reader service: String
       attr_reader operation: String
       attr_reader operation_token: String?
+      attr_reader scheduled_event_id: Integer
+      attr_reader original_failure: Api::Failure::V1::Failure?
 
       def initialize: (
         String message,
         endpoint: String,
         service: String,
         operation: String,
-        operation_token: String?
+        operation_token: String?,
+        ?scheduled_event_id: Integer,
+        ?original_failure: Api::Failure::V1::Failure?
       ) -> void
     end
 
     class NexusHandlerError < Failure
       attr_reader error_type: Symbol
+      attr_reader raw_error_type: String
       attr_reader retry_behavior: RetryBehavior::enum
+      attr_reader original_failure: Api::Failure::V1::Failure?
 
       def initialize: (
         String message,
         error_type: Symbol | String,
-        retry_behavior: RetryBehavior::enum
+        retry_behavior: RetryBehavior::enum,
+        ?raw_error_type: String?,
+        ?original_failure: Api::Failure::V1::Failure?
       ) -> void
 
       module RetryBehavior

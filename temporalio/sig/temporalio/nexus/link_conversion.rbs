@@ -1,0 +1,17 @@
+module Temporalio
+  module Nexus
+    module LinkConversion
+      LINK_URL_PATH_REGEX: Regexp
+      LINK_EVENT_ID_PARAM_NAME: String
+      LINK_EVENT_TYPE_PARAM_NAME: String
+      LINK_REQUEST_ID_PARAM_NAME: String
+      LINK_REFERENCE_TYPE_PARAM_NAME: String
+      EVENT_REFERENCE_TYPE: String
+      REQUEST_ID_REFERENCE_TYPE: String
+
+      def self.nexus_link_to_workflow_event: (untyped link) -> untyped?
+
+      def self.workflow_event_to_nexus_link: (untyped workflow_event) -> String
+    end
+  end
+end

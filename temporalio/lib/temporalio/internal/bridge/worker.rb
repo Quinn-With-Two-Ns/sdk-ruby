@@ -36,6 +36,7 @@ module Temporalio
           :workflow_slot_supplier,
           :activity_slot_supplier,
           :local_activity_slot_supplier,
+          :nexus_slot_supplier,
           keyword_init: true
         )
 
@@ -97,6 +98,13 @@ module Temporalio
         def complete_activity_task(proto)
           queue = Queue.new
           async_complete_activity_task(proto.to_proto, queue)
+          result = queue.pop
+          raise result if result.is_a?(Exception)
+        end
+
+        def complete_nexus_task(proto)
+          queue = Queue.new
+          async_complete_nexus_task(proto.to_proto, queue)
           result = queue.pop
           raise result if result.is_a?(Exception)
         end

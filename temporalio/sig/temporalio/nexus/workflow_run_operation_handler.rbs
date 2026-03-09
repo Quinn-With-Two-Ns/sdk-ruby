@@ -1,0 +1,36 @@
+module Temporalio
+  module Nexus
+    class WorkflowRunOperationHandler < NexusRPC::OperationHandler
+      def initialize: () { (untyped ctx, untyped input) -> WorkflowHandle } -> void
+
+      def start: (untyped ctx, untyped input) -> untyped
+
+      def cancel: (untyped ctx, String token) -> void
+
+      def start_workflow: (
+        singleton(Workflow::Definition) | Symbol | String workflow,
+        *Object? args,
+        id: String,
+        ?task_queue: String?,
+        ?static_summary: String?,
+        ?static_details: String?,
+        ?execution_timeout: Float?,
+        ?run_timeout: Float?,
+        ?task_timeout: Float?,
+        ?id_reuse_policy: WorkflowIDReusePolicy::enum,
+        ?id_conflict_policy: WorkflowIDConflictPolicy::enum,
+        ?retry_policy: RetryPolicy?,
+        ?cron_schedule: String?,
+        ?memo: Hash[String | Symbol, Object?]?,
+        ?search_attributes: SearchAttributes?,
+        ?start_delay: Float?,
+        ?request_eager_start: bool,
+        ?versioning_override: VersioningOverride?,
+        ?priority: Priority,
+        ?arg_hints: Array[Object]?,
+        ?result_hint: Object?,
+        ?rpc_options: Client::RPCOptions?
+      ) -> WorkflowHandle
+    end
+  end
+end

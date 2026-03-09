@@ -37,16 +37,16 @@ module Temporalio
           def create_nexus_client(endpoint:, service:)
             service_name = case service
                            when Class
-                             unless service.ancestors.include?(NexusRPC::Service)
+                             unless service < NexusRPC::Service
                                raise ArgumentError,
-                                     'Service class must include NexusRPC::Service'
+                                     'Service class must inherit from NexusRPC::Service'
                              end
                              service.service_name
                            when Symbol, String
                              service.to_s
                            else
                              raise ArgumentError,
-                                   'Service must be a class including NexusRPC::Service, or a symbol/string'
+                                   'Service must be a class inheriting from NexusRPC::Service, or a symbol/string'
                            end
             NexusClient.new(endpoint:, service: service_name, outbound: @outbound)
           end

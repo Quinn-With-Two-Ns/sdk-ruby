@@ -1,0 +1,16 @@
+module Temporalio
+  module Nexus
+    class WorkflowHandle
+      OPERATION_TOKEN_TYPE_WORKFLOW: Integer
+
+      attr_reader namespace: String
+      attr_reader workflow_id: String
+
+      def initialize: (namespace: String, workflow_id: String) -> void
+
+      def to_token: -> String
+
+      def self.from_token: (String token) -> WorkflowHandle
+    end
+  end
+end

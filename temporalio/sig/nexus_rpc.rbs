@@ -1,0 +1,123 @@
+module NexusRPC
+  class OperationHandler
+    def start: (untyped ctx, untyped input) -> untyped
+    def cancel: (untyped ctx, String token) -> void
+  end
+
+  class SyncOperationHandler < OperationHandler
+  end
+
+  class Service
+    def self.service_name: (?String? name) -> String?
+    def self.operations: () -> Hash[String, Operation]
+  end
+
+  class Operation
+    attr_reader name: String
+    attr_reader method_name: String
+    attr_reader input_type: untyped
+    attr_reader output_type: untyped
+  end
+
+  class ServiceHandler
+    def self.service: (singleton(Service) service_class) -> void
+    def self.service_definition: () -> singleton(Service)?
+    def self.operation_handlers: () -> Hash[String, Proc]
+    def self.validate!: () -> bool
+
+    def dispatch_start: (String operation_name, StartOperationContext ctx, untyped input) -> (HandlerStartOperationResult::Sync | HandlerStartOperationResult::Async)
+    def dispatch_cancel: (String operation_name, CancelOperationContext ctx, String token) -> void
+  end
+
+  class HandlerStartOperationResult
+    class Sync
+      attr_reader value: untyped
+      def initialize: (untyped value) -> void
+    end
+
+    class Async
+      attr_reader token: String
+      def initialize: (token: String) -> void
+    end
+  end
+
+  class HandlerError < StandardError
+    attr_reader type: Symbol
+    attr_reader retryable_override: bool?
+    attr_reader failure: Failure?
+
+    def initialize: (String message, type: Symbol, ?retryable: bool?, ?failure: Failure?) -> void
+    def retryable: () -> bool
+  end
+
+  class OperationError < StandardError
+    attr_reader state: Symbol
+    attr_reader failure: Failure?
+
+    def initialize: (String message, state: Symbol, ?failure: Failure?) -> void
+  end
+
+  module HandlerErrorType
+    BAD_REQUEST: Symbol
+    UNAUTHENTICATED: Symbol
+    UNAUTHORIZED: Symbol
+    NOT_FOUND: Symbol
+    RESOURCE_EXHAUSTED: Symbol
+    CONFLICT: Symbol
+    INTERNAL: Symbol
+    NOT_IMPLEMENTED: Symbol
+    UNAVAILABLE: Symbol
+    REQUEST_TIMEOUT: Symbol
+    UNKNOWN: Symbol
+    UPSTREAM_TIMEOUT: Symbol
+    ALL: Array[Symbol]
+  end
+
+  module OperationState
+    FAILED: Symbol
+    CANCELED: Symbol
+    ALL: Array[Symbol]
+  end
+
+  class Failure
+    attr_reader message: String
+    attr_reader stack_trace: String?
+    attr_reader metadata: Hash[String, String]?
+    attr_reader details: Hash[String, untyped]?
+    attr_reader cause: Failure?
+
+    def initialize: (message: String, ?stack_trace: String?, ?metadata: Hash[String, String]?, ?details: Hash[String, untyped]?, ?cause: Failure?) -> void
+  end
+
+  class Link
+    attr_reader url: String
+    attr_reader type: String
+  end
+
+  class OperationTaskCancellation
+    def cancel: (?reason: String?) -> void
+    def canceled?: () -> bool
+  end
+
+  class StartOperationContext
+    attr_reader service: String?
+    attr_reader operation: String?
+    attr_reader headers: Hash[String, String]
+    attr_reader callback_url: String?
+    attr_reader request_id: String?
+    attr_reader callback_headers: Hash[String, String]
+    attr_reader inbound_links: Array[Link]
+    attr_reader outbound_links: Array[Link]
+    attr_reader request_deadline: Time?
+    attr_reader task_cancellation: OperationTaskCancellation?
+  end
+
+  class CancelOperationContext
+    attr_reader service: String?
+    attr_reader operation: String?
+    attr_reader token: String?
+    attr_reader headers: Hash[String, String]
+    attr_reader request_deadline: Time?
+    attr_reader task_cancellation: OperationTaskCancellation?
+  end
+end
